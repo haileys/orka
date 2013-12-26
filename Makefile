@@ -12,7 +12,12 @@ LDFLAGS = -L $(LIBUV_LIB) -L $(LUAJIT_LIB) -luv -lluajit-5.1
 
 OBJECTS = src/main.o
 
+.PHONY: clean
+
 all: orka
+
+clean:
+	rm -f orka $(OBJECTS)
 
 orka: $(OBJECTS) Makefile
 	$(CC) -o $@ $(LDFLAGS) $(OBJECTS)
