@@ -10,6 +10,10 @@ LUAJIT_LIB ?= $(LUAJIT_PREFIX)/lib
 CFLAGS = -Wall -Wextra -pedantic -Werror -std=c99 -g -I $(LIBUV_INC) -I $(LUAJIT_INC)
 LDFLAGS = -L $(LIBUV_LIB) -L $(LUAJIT_LIB) -luv -lluajit-5.1
 
+ifeq ($(shell uname),Darwin)
+LDFLAGS += -pagezero_size 10000 -image_base 100000000
+endif
+
 OBJECTS = src/main.o
 
 .PHONY: clean
