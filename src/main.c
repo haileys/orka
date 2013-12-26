@@ -5,19 +5,33 @@
 #include <luajit-2.0/lualib.h>
 #include <luajit-2.0/luajit.h>
 
-static lua_State*
+lua_State*
+orka_lua;
+
+uv_loop_t*
+orka_loop;
+
+static void
 init_lua()
 {
-    lua_State* lua = lua_open();
+    orka_lua = lua_open();
 
-    if(!lua) {
+    if(!orka_lua) {
         fprintf(stderr, "Could not create LuaJIT state\n");
         exit(1);
     }
 
-    luaL_openlibs(lua);
+    luaL_openlibs(orka_lua);
+}
 
-    return lua;
+static void
+init_uv()
+{
+    orka_loop = uv_loop_new();
+    if(!orka_loop) {
+        fprintf(stderr, "Could not create libuv loop");
+        exit(1);
+    }
 }
 
 int
@@ -28,13 +42,13 @@ main(int argc, char** argv)
         exit(1);
     }
 
-    lua_State* lua = init_lua();
+    init_lua();
+    init_uv();
 
-    if(luaL_dofile(lua, argv[1])) {
-        fprintf(stderr, "%s\n", lua_tostring(lua, -1));
+    if(luaL_dofile(orka_lua, argv[1])) {
+        fprintf(stderr, "%s\n", lua_tostring(orka_lua, -1));
         exit(1);
     }
 
-    lua_close(lua);
     return 0;
 }

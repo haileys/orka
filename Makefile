@@ -26,5 +26,5 @@ clean:
 orka: $(OBJECTS) Makefile
 	$(CC) -o $@ $(LDFLAGS) $(OBJECTS)
 
-%.o: %.c Makefile
+%.o: %.c Makefile src/*.h
 	$(CC) -o $@ $(CFLAGS) -c $<
