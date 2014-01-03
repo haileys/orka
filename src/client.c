@@ -201,10 +201,8 @@ fix_up_headers(orka_client_t* client)
     }
     lua_pop(client->lua, 2);
 
-    if(client->keep_alive) {
-        lua_pushstring(client->lua, "close");
-        lua_setfield(client->lua, 2, "Connection");
-    }
+    lua_pushstring(client->lua, client->keep_alive ? "keep-alive" : "close");
+    lua_setfield(client->lua, 2, "Connection");
 }
 
 static void
@@ -280,10 +278,12 @@ write_buffer(orka_client_t* client, orka_buffer_t* buff)
 }
 
 static bool
-handle_request(orka_client_t* client, int header_table_ref)
+handle_request(orka_client_t* client, int handler_ref, int header_table_ref)
 {
     orka_gil_acquire();
 
+    lua_settop(client->lua, 0);
+    lua_rawgeti(client->lua, LUA_REGISTRYINDEX, handler_ref);
     lua_rawgeti(client->lua, LUA_REGISTRYINDEX, header_table_ref);
     luaL_unref(client->lua, LUA_REGISTRYINDEX, header_table_ref);
     lua_call(client->lua, 1, 3);
@@ -354,13 +354,17 @@ handle_request(orka_client_t* client, int header_table_ref)
 void
 orka_start_client(orka_client_t* client)
 {
+    orka_gil_acquire();
+    int handler_ref = luaL_ref(client->lua, LUA_REGISTRYINDEX);
+    orka_gil_release();
+
     while(true) {
         int header_table_ref = read_request(client);
         if(header_table_ref == LUA_NOREF) {
             break;
         }
 
-        if(!handle_request(client, header_table_ref)) {
+        if(!handle_request(client, handler_ref, header_table_ref)) {
             break;
         }
 
