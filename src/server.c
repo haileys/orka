@@ -36,6 +36,11 @@ server_thread_main(void* ctx)
             orka_error(server->lua, "accept");
         }
 
+        #ifdef SO_NOSIGPIPE
+            int one = 1;
+            setsockopt(client_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+        #endif
+
         orka_client_t* client = malloc(sizeof(*client));
         orka_gil_acquire();
         client->lua = lua_newthread(server->lua);

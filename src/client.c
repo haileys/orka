@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "orka.h"
@@ -258,9 +259,15 @@ collect_response_headers(orka_client_t* client, orka_buffer_t* buff)
 static int
 write_buffer(orka_client_t* client, orka_buffer_t* buff)
 {
+    int flags = 0;
+
+    #ifdef MSG_NOSIGNAL
+        flags |= MSG_NOSIGNAL;
+    #endif
+
     size_t pos = 0;
     while(pos < buff->len) {
-        ssize_t rc = send(client->fd, buff->buff, buff->len - pos, 0);
+        ssize_t rc = send(client->fd, buff->buff, buff->len - pos, flags);
         if(rc < 0 && errno == EINTR) {
             continue;
         }
