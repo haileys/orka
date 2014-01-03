@@ -12,6 +12,7 @@ endif
 
 ifeq ($(shell uname),Linux)
 CFLAGS += -pthread
+LDFLAGS += -pthread
 endif
 
 OBJECTS = \
