@@ -1,47 +1,87 @@
+#include <arpa/inet.h>
+#include <errno.h>
 #include <http_parser.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "orka.h"
+#include "client.h"
+#include "server.h"
 
-static void
-on_close(uv_handle_t* handle)
+static void*
+client_thread_main(void* ctx)
 {
-    orka_server_t* server = handle->data;
-    luaL_unref(server->lua, LUA_REGISTRYINDEX, server->handler_ref);
-    free(server);
+    orka_client_t* client = ctx;
+    pthread_detach(client->thread);
+    orka_start_client(client);
+    return NULL;
 }
 
-static void
-on_connection(uv_stream_t* server_, int status)
+static void*
+server_thread_main(void* ctx)
 {
-    if(status) {
-        fprintf(stderr, "on_connection: %s\n", uv_strerror(uv_last_error(orka_loop)));
-        return;
+    orka_server_t* server = ctx;
+    pthread_detach(server->thread);
+
+    while(1) {
+        struct sockaddr client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        int client_fd = accept(server->fd, &client_addr, &client_addr_len);
+
+        if(client_fd < 0) {
+            if(errno == EINTR) {
+                continue;
+            }
+            orka_error(server->lua, "accept");
+        }
+
+        orka_client_t* client = malloc(sizeof(*client));
+        orka_gil_acquire();
+        client->lua = lua_newthread(server->lua);
+        lua_rawgeti(server->lua, LUA_REGISTRYINDEX, server->handler_ref);
+        lua_xmove(server->lua, client->lua, 1);
+        orka_gil_release();
+        client->fd = client_fd;
+        pthread_create(&client->thread, NULL, client_thread_main, client);
     }
 
-    orka_server_t* server = server_->data;
-    orka_client_t* client = malloc(sizeof(*client));
+    return NULL;
+}
 
-    client->lua = server->lua;
-    client->handler_ref = server->handler_ref;
-
-    client->header_table_ref = LUA_NOREF;
-
-    if(uv_tcp_init(orka_loop, &client->client)) {
-        fprintf(stderr, "on_connection: %s\n", uv_strerror(uv_last_error(orka_loop)));
-        free(client);
-        return;
+static int
+setup_listener(const char* ipv4, uint16_t port)
+{
+    int fd = socket(PF_INET, SOCK_STREAM, 0);
+    if(fd < 0) {
+        return -1;
     }
 
-    // guaranteed to succeed
-    uv_accept((uv_stream_t*)&server->server, (uv_stream_t*)&client->client);
+    int one = 1;
+    if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) < 0) {
+        close(fd);
+        return -1;
+    }
 
-    client->client.data = client;
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if(!inet_aton(ipv4, &addr.sin_addr)) {
+        close(fd);
+        return -1;
+    }
 
-    http_parser_init(&client->parser, HTTP_REQUEST);
-    client->parser.data = client;
+    if(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(fd);
+        return -1;
+    }
 
-    orka_start_client(client);
+    if(listen(fd, 16) < 0) {
+        close(fd);
+        return -1;
+    }
+
+    return fd;
 }
 
 static int
@@ -61,21 +101,14 @@ serve(lua_State* l)
     lua_pushvalue(l, 2);
     server->handler_ref = luaL_ref(l, LUA_REGISTRYINDEX);
 
-    if(uv_tcp_init(orka_loop, &server->server)) {
+    server->fd = setup_listener("0.0.0.0", server->port);
+    if(server->fd < 0) {
         free(server);
-        return orka_uv_error(l, "uv_tcp_init");
+        return orka_error(l, "setup_listener");
     }
 
-    server->server.data = server;
-
-    if(uv_tcp_bind(&server->server, uv_ip4_addr("0.0.0.0", server->port))) {
-        free(server);
-        return orka_uv_error(l, "uv_tcp_bind");
-    }
-
-    if(uv_listen((uv_stream_t*)&server->server, 16, on_connection)) {
-        uv_close((uv_handle_t*)&server->server, on_close);
-        return orka_uv_error(l, "uv_listen");
+    if(pthread_create(&server->thread, NULL, server_thread_main, server) < 0) {
+        return orka_error(l, "pthread_create");
     }
 
     return 0;
