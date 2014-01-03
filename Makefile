@@ -10,6 +10,10 @@ ifeq ($(shell uname),Darwin)
 LDFLAGS += -pagezero_size 10000 -image_base 100000000
 endif
 
+ifeq ($(shell uname),Linux)
+CFLAGS += -pthread
+endif
+
 OBJECTS = \
 	src/buffer.o \
 	src/client.o \

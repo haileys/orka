@@ -1,3 +1,5 @@
+#define _BSD_SOURCE
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <http_parser.h>
